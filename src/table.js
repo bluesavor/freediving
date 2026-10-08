@@ -1,4 +1,5 @@
 export const MIN_BREATHE = 15;
+export const MAX_SECONDS = 3600;
 
 const INTEGER = /^\d+$/;
 
@@ -20,6 +21,7 @@ export function validate(raw) {
     const n = parseInteger(raw[key]);
     if (n === null) errors[key] = '정수를 입력하세요';
     else if (n < min) errors[key] = message;
+    else if (n > MAX_SECONDS) errors[key] = `${MAX_SECONDS}초 이하여야 합니다`;
     else values[key] = n;
   }
   return Object.keys(errors).length ? { ok: false, errors } : { ok: true, values, errors };

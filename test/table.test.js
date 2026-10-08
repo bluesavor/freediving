@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validate, buildTable, MIN_BREATHE } from '../src/table.js';
+import { validate, buildTable, MIN_BREATHE, MAX_SECONDS } from '../src/table.js';
 
 test('MIN_BREATHE is 15', () => {
   assert.equal(MIN_BREATHE, 15);
@@ -49,4 +49,28 @@ test('validate enforces ranges per field', () => {
     step: '1초 이상이어야 합니다',
     hold: '1초 이상이어야 합니다',
   });
+});
+
+test('MAX_SECONDS is 3600', () => {
+  assert.equal(MAX_SECONDS, 3600);
+});
+
+test('validate accepts the maximum', () => {
+  assert.equal(validate({ start: '3600', step: '3600', hold: '3600' }).ok, true);
+});
+
+test('validate rejects values above the maximum', () => {
+  const r = validate({ start: '3601', step: '3601', hold: '3601' });
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.errors, {
+    start: '3600초 이하여야 합니다',
+    step: '3600초 이하여야 합니다',
+    hold: '3600초 이하여야 합니다',
+  });
+});
+
+test('validate rejects absurdly long digit strings', () => {
+  const r = validate({ start: '9'.repeat(400), step: '15', hold: '60' });
+  assert.equal(r.ok, false);
+  assert.deepEqual(r.errors, { start: '3600초 이하여야 합니다' });
 });

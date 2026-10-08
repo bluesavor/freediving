@@ -8,6 +8,7 @@ const speech = createSpeech();
 let table = null;
 let runner = null;
 let wakeLock = null;
+let wakeLockPending = null;
 
 $('no-speech').hidden = speech.supported;
 
@@ -56,14 +57,18 @@ function setRunning(on) {
 }
 
 async function acquireWakeLock() {
-  if (!navigator.wakeLock || (wakeLock && !wakeLock.released)) return;
+  // 요청 중이거나 이미 잡고 있으면 중복 요청하지 않는다.
+  if (!navigator.wakeLock || wakeLockPending || (wakeLock && !wakeLock.released)) return;
   try {
-    const lock = await navigator.wakeLock.request('screen');
+    wakeLockPending = navigator.wakeLock.request('screen');
+    const lock = await wakeLockPending;
     // 요청 중에 정지·완료됐으면 바로 놓는다.
     if (runner) wakeLock = lock;
     else lock.release();
   } catch {
     // 미지원·거부는 무시한다.
+  } finally {
+    wakeLockPending = null;
   }
 }
 
