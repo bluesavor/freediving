@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CO2 Table</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="src/app.js"></script>
+</head>
+<body>
+  <main>
+    <h1>CO2 Table</h1>
+    <div class="inputs">
+      <div class="field">
+        <label for="start">숨쉬기 시작 (초)</label>
+        <input id="start" inputmode="numeric" value="120">
+        <div class="err" id="err-start"></div>
+      </div>
+      <div class="field">
+        <label for="step">간격 (초)</label>
+        <input id="step" inputmode="numeric" value="15">
+        <div class="err" id="err-step"></div>
+      </div>
+      <div class="field">
+        <label for="hold">숨참기 (초)</label>
+        <input id="hold" inputmode="numeric" value="60">
+        <div class="err" id="err-hold"></div>
+      </div>
+    </div>
+    <button id="build" class="btn">테이블 만들기</button>
+    <p id="no-speech" class="banner" hidden>이 브라우저는 음성 안내를 지원하지 않습니다</p>
+    <table>
+      <thead><tr><th>#</th><th>숨쉬기</th><th>숨참기</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <section id="panel" class="panel">
+      <div id="phase" class="phase">READY</div>
+      <div id="secs" class="secs">—</div>
+      <div id="round" class="round"></div>
+    </section>
+    <button id="toggle" class="btn big" disabled>시작</button>
+    <p class="hint">무음 모드를 끄고, 진행 중에는 화면을 잠그지 마세요.</p>
+  </main>
+</body>
+</html>
