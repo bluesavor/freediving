@@ -192,7 +192,10 @@ export function createRunner(table, deps); // → { start(), stop() }
 export function createSpeech(win = window);
 ```
 
-- **음성 선택**: `en-US` 중 `localService` → `en-US` → `en-`으로 시작하는 음성 → 없으면 voice를 지정하지 않고 `lang = 'en-US'`
+- **음성 선택**: macOS·iOS의 장난감·로봇 음성(Albert, Bells, Zarvox 등)은 후보에서 제외한다. 이 음성들도 `en-US`로 표시되고 알파벳순으로 먼저 나오기 때문이다.
+  - 자연스러운 음성을 이름으로 먼저 찾는다: Samantha, Alex, Ava, Allison, Susan, Tom, Google US English, Microsoft Aria/Jenny/Zira
+  - 없으면 `en-US` 중 `localService` → `en-US` → `en-`으로 시작하는 음성
+  - 그래도 없으면 voice를 지정하지 않고 `lang = 'en-US'`
   - `voiceschanged` 이벤트가 오면 다시 선택한다.
 - **`speak(text)`**: `speaking || pending`일 때만 `speechSynthesis.cancel()`로 끊고, 새 발화를 즉시 재생한다(최신 발화 우선).
   - 불필요한 `cancel()`은 iOS와 Chrome에서 다음 발화가 유실되는 원인이라 피한다.

@@ -37,6 +37,30 @@ test('prefers local en-US, sets lang en-US', () => {
   assert.equal(u.voice, local);
 });
 
+test('macOS/iOS order: skips novelty voices listed first and picks Samantha', () => {
+  const samantha = voice('Samantha', 'en-US', true);
+  const { win, calls } = fakeWin([
+    voice('Albert', 'en-US', true), voice('Bad News', 'en-US', true), voice('Bells', 'en-US', true),
+    voice('Eddy (영어(미국))', 'en-US', true), samantha, voice('Google US English', 'en-US'),
+  ]);
+  createSpeech(win).speak('1');
+  assert.equal(calls[0][1].voice, samantha);
+});
+
+test('only novelty local voices → prefers a natural remote voice over them', () => {
+  const google = voice('Google US English', 'en-US');
+  const { win, calls } = fakeWin([voice('Albert', 'en-US', true), voice('Zarvox', 'en-US', true), google]);
+  createSpeech(win).speak('1');
+  assert.equal(calls[0][1].voice, google);
+});
+
+test('only novelty voices → no voice set, lang en-US', () => {
+  const { win, calls } = fakeWin([voice('Albert', 'en-US', true), voice('Bubbles', 'en-US', true)]);
+  createSpeech(win).speak('1');
+  assert.equal(calls[0][1].voice, undefined);
+  assert.equal(calls[0][1].lang, 'en-US');
+});
+
 test('underscore lang (Android) is recognised', () => {
   const v = voice('Android', 'en_US');
   const { win, calls } = fakeWin([voice('Korean', 'ko-KR'), v]);

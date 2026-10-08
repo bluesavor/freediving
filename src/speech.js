@@ -1,10 +1,28 @@
 const lang = v => v.lang.replace('_', '-');
+const baseName = v => v.name.split(' (')[0];
+
+// 자연스러운 영어 음성을 이름으로 먼저 찾는다.
+const PREFERRED = [
+  'Samantha', 'Alex', 'Ava', 'Allison', 'Susan', 'Tom',
+  'Google US English', 'Microsoft Aria', 'Microsoft Jenny', 'Microsoft Zira',
+];
+// macOS·iOS는 en-US로 표시된 장난감·로봇 음성을 알파벳순으로 먼저 내놓는다.
+const NOVELTY = new Set([
+  'Albert', 'Bad News', 'Bahh', 'Bells', 'Boing', 'Bubbles', 'Cellos', 'Good News', 'Jester',
+  'Organ', 'Superstar', 'Trinoids', 'Whisper', 'Wobble', 'Zarvox', 'Fred', 'Junior', 'Kathy',
+  'Ralph', 'Eddy', 'Flo', 'Grandma', 'Grandpa', 'Reed', 'Rocko', 'Sandy', 'Shelley',
+]);
 
 function pickVoice(voices) {
+  const english = voices.filter(v => lang(v).startsWith('en-') && !NOVELTY.has(baseName(v)));
+  for (const name of PREFERRED) {
+    const v = english.find(v => v.name === name || v.name.startsWith(`${name} `));
+    if (v) return v;
+  }
   return (
-    voices.find(v => lang(v) === 'en-US' && v.localService) ||
-    voices.find(v => lang(v) === 'en-US') ||
-    voices.find(v => lang(v).startsWith('en-')) ||
+    english.find(v => lang(v) === 'en-US' && v.localService) ||
+    english.find(v => lang(v) === 'en-US') ||
+    english[0] ||
     null
   );
 }
