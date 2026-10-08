@@ -13,10 +13,12 @@ const NOVELTY = new Set([
   'Ralph', 'Eddy', 'Flo', 'Grandma', 'Grandpa', 'Reed', 'Rocko', 'Sandy', 'Shelley',
 ]);
 
-function pickVoice(voices) {
-  const english = voices.filter(v => lang(v).startsWith('en-') && !NOVELTY.has(baseName(v)));
+const matches = (v, name) => v.name === name || v.name.startsWith(`${name} `);
+const englishVoices = voices => voices.filter(v => lang(v).startsWith('en-') && !NOVELTY.has(baseName(v)));
+
+function pickVoice(english) {
   for (const name of PREFERRED) {
-    const v = english.find(v => v.name === name || v.name.startsWith(`${name} `));
+    const v = english.find(v => matches(v, name));
     if (v) return v;
   }
   return (
@@ -27,16 +29,35 @@ function pickVoice(voices) {
   );
 }
 
+// PREFERRED 순서대로 먼저, 나머지는 이름순.
+function sortVoices(english) {
+  const rank = v => {
+    const i = PREFERRED.findIndex(name => matches(v, name));
+    return i === -1 ? PREFERRED.length : i;
+  };
+  return [...english].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
+}
+
 export function createSpeech(win = globalThis) {
   const synth = win.speechSynthesis;
   if (!synth || !win.SpeechSynthesisUtterance) {
-    return { supported: false, speak() {}, cancel() {} };
+    return { supported: false, speak() {}, cancel() {}, listVoices: () => [], setVoice() {}, onVoicesChange() {} };
   }
 
-  let voice = pickVoice(synth.getVoices());
+  let voice = null;
+  let requested = null;
+  const listeners = [];
+
+  // 요청한 이름이 있으면 그 음성, 없거나 못 찾으면 자동 선택.
+  function resolve() {
+    const english = englishVoices(synth.getVoices());
+    voice = (requested && english.find(v => v.name === requested)) || pickVoice(english);
+  }
+  resolve();
   // 일부 브라우저는 음성 목록을 늦게 채운다.
   synth.addEventListener?.('voiceschanged', () => {
-    voice = pickVoice(synth.getVoices());
+    resolve();
+    for (const fn of listeners) fn();
   });
 
   return {
@@ -51,6 +72,17 @@ export function createSpeech(win = globalThis) {
     },
     cancel() {
       synth.cancel();
+    },
+    listVoices() {
+      return sortVoices(englishVoices(synth.getVoices()))
+        .map(v => ({ name: v.name, lang: lang(v), local: v.localService === true }));
+    },
+    setVoice(name) {
+      requested = name || null;
+      resolve();
+    },
+    onVoicesChange(fn) {
+      listeners.push(fn);
     },
   };
 }

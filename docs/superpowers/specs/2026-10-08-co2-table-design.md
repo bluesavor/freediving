@@ -72,17 +72,18 @@
 한 페이지, 위에서 아래 순서:
 
 1. 입력 3칸, 각 칸 아래 오류 메시지 영역, [테이블 만들기] 버튼
-2. 음성 미지원 시 경고 배너("이 브라우저는 음성 안내를 지원하지 않습니다")
-3. 테이블 `# | 숨쉬기 | 숨참기`
+2. 목소리 선택(드롭다운)과 [▶ 미리듣기] 버튼. 입력과 [테이블 만들기] 사이에 두고, 진행 중에는 잠그며, 음성 미지원 시 숨긴다.
+3. 음성 미지원 시 경고 배너("이 브라우저는 음성 안내를 지원하지 않습니다")
+4. 테이블 `# | 숨쉬기 | 숨참기`
    - 진행 중인 행에 강조 표시
    - 현재 단계 칸에 추가 강조
-4. 진행 패널
+5. 진행 패널
    - 현재 단계 라벨(BREATHE / HOLD / READY / DONE)
    - 남은 초(큰 글씨)
    - 라운드 `n / 총`
    - 단계별 배경색: 숨쉬기와 숨참기를 구분
-5. [시작]/[정지] 큰 버튼
-6. 버튼 아래 안내 문구: "무음 모드를 끄고, 진행 중에는 화면을 잠그지 마세요."
+6. [시작]/[정지] 큰 버튼
+7. 버튼 아래 안내 문구: "무음 모드를 끄고, 진행 중에는 화면을 잠그지 마세요."
 
 ## 4. 구조
 
@@ -188,7 +189,7 @@ export function createRunner(table, deps); // → { start(), stop() }
 ### 4.4 `src/speech.js`
 
 ```js
-// 반환: { supported: boolean, speak(text), cancel() }
+// 반환: { supported, speak(text), cancel(), listVoices(), setVoice(name), onVoicesChange(fn) }
 export function createSpeech(win = window);
 ```
 
@@ -197,11 +198,14 @@ export function createSpeech(win = window);
   - 없으면 `en-US` 중 `localService` → `en-US` → `en-`으로 시작하는 음성
   - 그래도 없으면 voice를 지정하지 않고 `lang = 'en-US'`
   - `voiceschanged` 이벤트가 오면 다시 선택한다.
+- **`listVoices()`**: 위 필터(영어, 장난감 음성 제외)를 통과한 음성을 `{ name, lang, local }`로 돌려준다. 자연스러운 음성 목록 순서대로 먼저, 나머지는 이름순이다. 미지원이면 `[]`.
+- **`setVoice(name)`**: `null`/`''`이면 자동 선택. 이름이 있으면 그 음성을 쓰고, 목록에 없으면 자동이다. 요청한 이름은 기억해 두었다가 `voiceschanged` 때 다시 적용한다(늦게 로드돼도 반영).
+- **`onVoicesChange(fn)`**: `voiceschanged`로 다시 선택한 뒤마다 `fn()`을 호출한다. 여러 개 등록 가능.
 - **`speak(text)`**: `speaking || pending`일 때만 `speechSynthesis.cancel()`로 끊고, 새 발화를 즉시 재생한다(최신 발화 우선).
   - 불필요한 `cancel()`은 iOS와 Chrome에서 다음 발화가 유실되는 원인이라 피한다.
   - 시작 멘트가 다음 지점 전에 끝나지 않으면 잘린다. 예: `"Hold. 6 seconds."` 다음의 `"5"`. 카운트다운이 늦게 들리는 것보다 낫다고 보고 허용한다.
 - 별도의 `unlock()`은 두지 않는다. 첫 발화가 [시작] 클릭 안에서 동기적으로 일어나기 때문이다(4.3).
-- **미지원(`!('speechSynthesis' in win)`)**: `supported = false`로 두고 메서드는 아무것도 하지 않는다.
+- **미지원(`!('speechSynthesis' in win)`)**: `supported = false`로 두고 메서드는 아무것도 하지 않는다(`listVoices()`는 `[]`).
 
 ### 4.5 `src/app.js`
 
@@ -211,6 +215,7 @@ export function createSpeech(win = window);
   - 시작 시 `navigator.wakeLock?.request('screen')`을 호출하고, 실패하면 무시한다.
   - `document.visibilityState === 'visible'`이 되면 진행 중이고 sentinel이 없거나 `released`일 때만 재요청한다.
   - 정지하거나 완료되면 해제한다.
+- **목소리**: 선택한 이름은 `localStorage`(`co2-table.voice`)에 저장하고, 기기에 없으면 자동으로 돌아간다. 저장소 오류는 무시한다. [▶ 미리듣기]는 샘플 문장을 말한다.
 - **[정지]**: `runner.stop()` → `speech.cancel()` → Wake Lock 해제 → UI를 READY로 되돌린다.
 - **완료(`onComplete`)**: Wake Lock 해제 → UI를 DONE으로 바꾼다. `speech.cancel()`은 호출하지 않는다(종료 멘트 보존).
 
@@ -262,6 +267,10 @@ export function createSpeech(win = window);
 - `start()` 반환 직후 이미 `onPhase(0)`와 시작 멘트 발화가 끝나 있음(동기)
 - `onTick`의 remaining은 항상 ≥ 1
 - `stop()` 후 시간이 흘러도 `speak`, `onTick`, `onPhase`, `onComplete` 모두 0회
+
+**speech (가짜 `speechSynthesis`)**
+- `listVoices`: 장난감·비영어 제외, 자연스러운 음성 먼저 + 나머지 이름순, `{ name, lang, local }` 형태
+- `setVoice`: 이름 지정 시 해당 음성, 없는 이름·`null`은 자동, 늦게 로드돼도 요청 음성 적용 + `onVoicesChange` 호출, 미지원 시 no-op
 
 **수동 (실기기)**
 - iOS Safari와 Android Chrome에서 음성 발화, 화면 꺼짐 방지, 정지 동작 확인

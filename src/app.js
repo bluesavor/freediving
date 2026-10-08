@@ -4,6 +4,7 @@ import { createSpeech } from './speech.js';
 
 const $ = id => document.getElementById(id);
 const FIELDS = ['start', 'step', 'hold'];
+const VOICE_KEY = 'co2-table.voice';
 const speech = createSpeech();
 let table = null;
 let runner = null;
@@ -11,6 +12,44 @@ let wakeLock = null;
 let wakeLockPending = null;
 
 $('no-speech').hidden = speech.supported;
+$('voice-row').hidden = !speech.supported;
+
+// 저장소는 사생활 보호 모드 등에서 던질 수 있어 실패는 무시한다.
+function savedVoice() {
+  try {
+    return localStorage.getItem(VOICE_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function saveVoice(name) {
+  try {
+    if (name) localStorage.setItem(VOICE_KEY, name);
+    else localStorage.removeItem(VOICE_KEY);
+  } catch {
+    // 무시
+  }
+}
+
+function renderVoices() {
+  const auto = document.createElement('option');
+  auto.value = '';
+  auto.textContent = '자동 (추천)';
+  const voices = speech.listVoices();
+  const options = voices.map(v => {
+    const o = document.createElement('option');
+    o.value = v.name;
+    o.textContent = v.local ? v.name : `${v.name} · 온라인`;
+    return o;
+  });
+  $('voice').replaceChildren(auto, ...options);
+  // 기기에 없는 저장값은 자동으로 되돌린다.
+  const saved = savedVoice();
+  const value = voices.some(v => v.name === saved) ? saved : '';
+  $('voice').value = value;
+  speech.setVoice(value || null);
+}
 
 function renderTable() {
   $('rows').replaceChildren(...table.map(row => {
@@ -51,6 +90,8 @@ function showReady() {
 function setRunning(on) {
   for (const f of FIELDS) $(f).disabled = on;
   $('build').disabled = on;
+  $('voice').disabled = on;
+  $('preview').disabled = on;
   $('toggle').disabled = !table;
   $('toggle').textContent = on ? '정지' : '시작';
   $('toggle').classList.toggle('stop', on);
@@ -122,6 +163,17 @@ $('build').addEventListener('click', () => {
 });
 
 $('toggle').addEventListener('click', () => (runner ? stop() : start()));
+
+$('voice').addEventListener('change', () => {
+  const name = $('voice').value;
+  speech.setVoice(name || null);
+  saveVoice(name);
+});
+
+$('preview').addEventListener('click', () => speech.speak('Round 1. Breathe. 120 seconds.'));
+
+renderVoices();
+speech.onVoicesChange(renderVoices);
 
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && runner) acquireWakeLock();
