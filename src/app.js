@@ -32,6 +32,8 @@ function saveVoice(name) {
   }
 }
 
+let chosenVoice = savedVoice();
+
 function renderVoices() {
   const auto = document.createElement('option');
   auto.value = '';
@@ -44,11 +46,9 @@ function renderVoices() {
     return o;
   });
   $('voice').replaceChildren(auto, ...options);
-  // 기기에 없는 저장값은 자동으로 되돌린다.
-  const saved = savedVoice();
-  const value = voices.some(v => v.name === saved) ? saved : '';
-  $('voice').value = value;
-  speech.setVoice(value || null);
+  // 선택값은 메모리에 두어 저장소 실패와 무관하게 유지한다. 기기에 없으면 자동으로 표시한다.
+  $('voice').value = voices.some(v => v.name === chosenVoice) ? chosenVoice : '';
+  speech.setVoice(chosenVoice || null);
 }
 
 function renderTable() {
@@ -165,9 +165,9 @@ $('build').addEventListener('click', () => {
 $('toggle').addEventListener('click', () => (runner ? stop() : start()));
 
 $('voice').addEventListener('change', () => {
-  const name = $('voice').value;
-  speech.setVoice(name || null);
-  saveVoice(name);
+  chosenVoice = $('voice').value;
+  speech.setVoice(chosenVoice || null);
+  saveVoice(chosenVoice);
 });
 
 $('preview').addEventListener('click', () => speech.speak('Round 1. Breathe. 120 seconds.'));
