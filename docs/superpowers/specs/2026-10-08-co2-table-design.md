@@ -44,6 +44,7 @@
 - 단계 시작
   - 숨쉬기: `"Round {n}. Breathe. {d} seconds."`
   - 숨참기: `"Hold. {d} seconds."`
+  - d = 1이면 단수형 `"1 second"`를 쓴다.
 - 카운트다운 지점은 남은 시간 기준으로 60, 30, 15, 10, 5, 4, 3, 2, 1초다.
   - 60, 30, 15, 10초 → `"{N} seconds"`
   - 5, 4, 3, 2, 1초 → `"{N}"`
@@ -51,6 +52,7 @@
     - d = 60이면 시작 멘트 다음이 30이다.
     - d = 45이면 60을 생략한다.
 - 전체 종료: `"Table complete. Well done."`
+- 재동기화 안내: 탭이 백그라운드에 있다 돌아와 현재 단계의 시작 멘트를 놓쳤으면, 짧은 큐 `"Round {n}. Breathe."` / `"Hold."`를 1회 말한다. 눈을 감고 있어도 현재 단계를 알 수 있게 하기 위해서다.
 
 ### 2.5 조작
 
@@ -80,6 +82,7 @@
    - 라운드 `n / 총`
    - 단계별 배경색: 숨쉬기와 숨참기를 구분
 5. [시작]/[정지] 큰 버튼
+6. 버튼 아래 안내 문구: "무음 모드를 끄고, 진행 중에는 화면을 잠그지 마세요."
 
 ## 4. 구조
 
@@ -115,6 +118,8 @@ export function buildTable({ start, step, hold });
 ```
 
 - 정수 판정: 앞뒤 공백을 제거한 문자열이 `/^\d+$/`에 맞아야 한다.
+  - `"-5"`, `"+5"`는 오류다.
+  - `"0015"`는 15로 허용한다.
 - 오류 메시지(한국어):
   - 정수가 아닐 때: `"정수를 입력하세요"`
   - start < 15: `"15초 이상이어야 합니다"`
@@ -130,9 +135,14 @@ export const COMPLETE_TEXT = 'Table complete. Well done.';
 export function phases(table);
 
 // 반환: 남은 초(at) 내림차순 [{ at, text }]
-//   첫 항목은 { at: duration, text: 시작 멘트 }
+//   첫 항목은 { at: duration, text: 시작 멘트, kind: 'start' }
+//   나머지는 kind: 'mark'
+//   d = 1이면 시작 멘트 하나뿐
 //   이어서 COUNTDOWN_MARKS 중 mark < duration 인 것
 export function announcements(phase);
+
+// 재동기화용 짧은 큐: breathe → "Round {n}. Breathe.", hold → "Hold."
+export function cueText(phase);
 ```
 
 ### 4.3 `src/runner.js`
@@ -155,13 +165,21 @@ export function createRunner(table, deps); // → { start(), stop() }
 - `remaining = Math.ceil((phaseEnd − now) / 1000)`
 - 안내 발화 조건: 그 단계에서 아직 처리하지 않은 안내 중 `at === remaining`인 것을 말한다.
   - `at > remaining`인데 처리하지 않은 안내(틱이 늦어 건너뛴 것)는 말하지 않고 처리 완료로 표시한다. 밀린 안내를 몰아서 말하지 않기 위해서다.
+- 한 틱에서 `speak`는 최대 1회만 호출한다.
+  - 현재 단계의 `kind: 'start'` 안내가 발화되지 않고 건너뛰어졌다면(재동기화), 그 단계에서 처음 한 번 `cueText(phase)`를 말한다. 같은 틱에 해당하는 mark는 처리 완료로만 표시한다.
 - `remaining ≤ 0`이면 다음 단계로 넘어간다.
   - 한 번의 틱에서 여러 단계를 건너뛰어야 하면, 지나간 단계는 조용히 넘긴다. 단, `onPhase`는 각 단계마다 호출한다.
   - 현재 단계의 시작 멘트도 위의 at/remaining 규칙을 그대로 따른다.
 - 마지막 단계가 끝나면 `speak(COMPLETE_TEXT)`와 `onComplete()`를 호출하고 틱을 멈춘다.
-- `start()`
-  - 단계 0으로 진입하면서 `onPhase(0, …)`를 호출한다.
-  - 즉시 1회 틱을 실행한다. 이 틱에서 시작 멘트가 나간다.
+- **한 틱 안의 순서**
+  1. 경과 시간에 따라 필요한 만큼 단계를 넘기고, 넘길 때마다 `onPhase(i, phase)`를 호출한다.
+  2. 발화 판정을 하고 `speak`를 최대 1회 호출한다.
+  3. `onTick`을 호출한다.
+  - `onTick`의 `remaining`은 항상 1 이상이다. 0은 보내지 않는다.
+- **`start()`**
+  - **동기적으로** 단계 0에 진입해 `onPhase(0, …)`를 호출한다.
+  - 같은 호출 안에서 첫 틱을 실행한다(`setTimer`를 거치지 않는다).
+  - 따라서 시작 멘트는 [시작] 클릭 핸들러 안에서 발화된다. iOS 음성 잠금 해제도 이 동작으로 해결된다.
 - `stop()`
   - 예약된 타이머를 해제한다.
   - 이후 어떤 콜백도 호출하지 않는다.
@@ -170,14 +188,16 @@ export function createRunner(table, deps); // → { start(), stop() }
 ### 4.4 `src/speech.js`
 
 ```js
-// 반환: { supported: boolean, unlock(), speak(text), cancel() }
+// 반환: { supported: boolean, speak(text), cancel() }
 export function createSpeech(win = window);
 ```
 
-- **음성 선택**: `en-US` → `en-`으로 시작하는 음성 → 없으면 voice를 지정하지 않고 `lang = 'en-US'`
+- **음성 선택**: `en-US` 중 `localService` → `en-US` → `en-`으로 시작하는 음성 → 없으면 voice를 지정하지 않고 `lang = 'en-US'`
   - `voiceschanged` 이벤트가 오면 다시 선택한다.
-- **`speak(text)`**: 진행 중인 발화가 있으면 `speechSynthesis.cancel()`로 끊고 새 발화를 즉시 재생한다(최신 발화 우선). 카운트다운이 늦게 들리는 것보다 이전 멘트가 잘리는 편이 낫다. 실제로 잘리는 경우는 단계 시간이 5초 이하일 때뿐이다.
-- **`unlock()`**: [시작] 클릭 핸들러 안에서 빈 발화(`' '`)를 1회 재생한다(iOS 대응).
+- **`speak(text)`**: `speaking || pending`일 때만 `speechSynthesis.cancel()`로 끊고, 새 발화를 즉시 재생한다(최신 발화 우선).
+  - 불필요한 `cancel()`은 iOS와 Chrome에서 다음 발화가 유실되는 원인이라 피한다.
+  - 시작 멘트가 다음 지점 전에 끝나지 않으면 잘린다. 예: `"Hold. 6 seconds."` 다음의 `"5"`. 카운트다운이 늦게 들리는 것보다 낫다고 보고 허용한다.
+- 별도의 `unlock()`은 두지 않는다. 첫 발화가 [시작] 클릭 안에서 동기적으로 일어나기 때문이다(4.3).
 - **미지원(`!('speechSynthesis' in win)`)**: `supported = false`로 두고 메서드는 아무것도 하지 않는다.
 
 ### 4.5 `src/app.js`
@@ -186,9 +206,10 @@ export function createSpeech(win = window);
 - `createRunner`를 생성할 때 실제 `performance.now`, `setTimeout`, `clearTimeout`, `speech.speak`를 주입한다.
 - **Wake Lock**
   - 시작 시 `navigator.wakeLock?.request('screen')`을 호출하고, 실패하면 무시한다.
-  - `document.visibilityState === 'visible'`이 되면 진행 중일 때 재요청한다.
+  - `document.visibilityState === 'visible'`이 되면 진행 중이고 sentinel이 없거나 `released`일 때만 재요청한다.
   - 정지하거나 완료되면 해제한다.
 - **[정지]**: `runner.stop()` → `speech.cancel()` → Wake Lock 해제 → UI를 READY로 되돌린다.
+- **완료(`onComplete`)**: Wake Lock 해제 → UI를 DONE으로 바꾼다. `speech.cancel()`은 호출하지 않는다(종료 멘트 보존).
 
 ## 5. 예외 처리
 
@@ -197,7 +218,7 @@ export function createSpeech(win = window);
 | 음성 미지원 | 경고 배너를 띄우고, 타이머·화면 표시는 정상 동작 |
 | 영어 음성 없음 | `lang='en-US'`로 기본 음성 사용 |
 | Wake Lock 미지원·거부 | 무시 |
-| 탭이 백그라운드로 가 타이머가 지연 | 경과 시간으로 현재 단계를 다시 계산하고, 밀린 안내는 생략 |
+| 탭이 백그라운드로 가거나 화면이 잠겨 타이머가 지연 | 경과 시간으로 현재 단계를 다시 계산하고, 밀린 안내는 생략하되 시작 멘트를 놓쳤으면 짧은 큐 1회 |
 | 잘못된 입력 | 필드별 오류를 표시하고, 테이블과 [시작]은 갱신하지 않음 |
 
 ## 6. 테스트
@@ -210,6 +231,8 @@ export function createSpeech(win = window);
 - start = 15 → 1행
 - 오류: start = 14, step = 0, hold = 0, `""`, `"1.5"`, `"abc"`
 - 공백이 섞인 `" 120 "` → 허용
+- `"-5"`, `"+5"` → 오류
+- `"0015"` → 15
 
 **schedule**
 - `phases`: 길이 2n, 순서 breathe/hold 교대, round 번호
@@ -219,7 +242,9 @@ export function createSpeech(win = window);
   - d = 45 → [45, 30, 15, …]
   - d = 15 → [15, 10, 5, …]
   - d = 5 → [5, 4, 3, 2, 1]이고, 그중 at = 5는 시작 멘트
+  - d = 1 → 시작 멘트 `"Hold. 1 second."` 하나뿐
   - 텍스트 형식: 시작 멘트, `"30 seconds"`, `"3"`
+- `cueText`: breathe → `"Round 2. Breathe."`, hold → `"Hold."`
 
 **runner (가짜 시계와 가짜 타이머)**
 - 1행 테이블(15/x/10)을 끝까지 진행했을 때 발화 순서 전체와 `onComplete`
@@ -227,9 +252,17 @@ export function createSpeech(win = window);
 - 200ms 틱 지터가 있어도 각 안내는 정확히 1회만 발화
 - `stop()` 이후 콜백 없음
 - 시간을 크게 건너뛰면(예: 숨쉬기 중 40초 점프) 밀린 안내는 생략하고 현재 시점부터 정상 진행
+- 숨쉬기 도중 숨참기 중간으로 점프 → `"Hold."` 큐 1회, 이후 mark 정상
+- 한 틱에 여러 단계를 건너뛰면 `onPhase`가 단계마다 순서대로 호출됨
+- 끝을 지나 점프 → COMPLETE 1회, `onComplete` 1회
+- 단계 전환 틱에서 이중 발화 없음(틱당 `speak` ≤ 1)
+- `start()` 반환 직후 이미 `onPhase(0)`와 시작 멘트 발화가 끝나 있음(동기)
+- `onTick`의 remaining은 항상 ≥ 1
+- `stop()` 후 시간이 흘러도 `speak`, `onTick`, `onPhase`, `onComplete` 모두 0회
 
 **수동 (실기기)**
 - iOS Safari와 Android Chrome에서 음성 발화, 화면 꺼짐 방지, 정지 동작 확인
+- iOS에서 무음 스위치가 켜져 있을 때 음성이 나오는지 확인한다. 나오지 않으면 안내 문구로 충분한지 판단한다.
 
 ## 7. 구현 분담 (팀 모드)
 
