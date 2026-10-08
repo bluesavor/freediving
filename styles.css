@@ -38,6 +38,20 @@ h1 { font-size: 20px; margin: 0; }
   color: var(--text);
 }
 .field input:disabled { opacity: .45; }
+.voice label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.voice-controls { display: flex; gap: 8px; }
+.voice select {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--text);
+}
+.voice select:disabled { opacity: .45; }
+.preview { width: auto; white-space: nowrap; }
 .err { color: var(--err); font-size: 11px; min-height: 14px; margin-top: 3px; }
 .btn {
   width: 100%;

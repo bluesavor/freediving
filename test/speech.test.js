@@ -99,3 +99,57 @@ test('re-picks the voice on voiceschanged', () => {
   s.speak('x');
   assert.equal(calls[0][1].voice, v);
 });
+
+test('listVoices drops novelty/non-English, orders PREFERRED first then alphabetical', () => {
+  const { win } = fakeWin([
+    voice('Zarvox', 'en-US', true), voice('Korean', 'ko-KR'), voice('Daniel', 'en-GB'),
+    voice('Google US English', 'en-US'), voice('Albert', 'en-US', true),
+    voice('Samantha', 'en-US', true), voice('Aaron', 'en-US', true),
+  ]);
+  const list = createSpeech(win).listVoices();
+  assert.deepEqual(list.map(v => v.name), ['Samantha', 'Google US English', 'Aaron', 'Daniel']);
+  assert.deepEqual(list[0], { name: 'Samantha', lang: 'en-US', local: true });
+});
+
+test('setVoice picks the named voice over the automatic one', () => {
+  const daniel = voice('Daniel', 'en-GB');
+  const { win, calls } = fakeWin([voice('Samantha', 'en-US', true), daniel]);
+  const s = createSpeech(win);
+  s.setVoice('Daniel');
+  s.speak('x');
+  assert.equal(calls[0][1].voice, daniel);
+});
+
+test('setVoice with unknown name or null falls back to automatic', () => {
+  const samantha = voice('Samantha', 'en-US', true);
+  const { win, calls } = fakeWin([samantha, voice('Daniel', 'en-GB')]);
+  const s = createSpeech(win);
+  s.setVoice('Nope');
+  s.speak('a');
+  assert.equal(calls[0][1].voice, samantha);
+  s.setVoice('Daniel');
+  s.setVoice(null);
+  s.speak('b');
+  assert.equal(calls[1][1].voice, samantha);
+});
+
+test('requested voice applies after late load and notifies onVoicesChange', () => {
+  const { win, synth, calls, listeners } = fakeWin([]);
+  const s = createSpeech(win);
+  let changed = 0;
+  s.onVoicesChange(() => { changed++; });
+  s.setVoice('Daniel');
+  const daniel = voice('Daniel', 'en-GB');
+  synth.voices = [voice('Samantha', 'en-US', true), daniel];
+  listeners.voiceschanged();
+  s.speak('x');
+  assert.equal(calls[0][1].voice, daniel);
+  assert.equal(changed, 1);
+});
+
+test('unsupported browser: listVoices is empty, setVoice/onVoicesChange are no-ops', () => {
+  const s = createSpeech({});
+  assert.deepEqual(s.listVoices(), []);
+  s.setVoice('x');
+  s.onVoicesChange(() => {});
+});
